@@ -1,0 +1,6 @@
+{
+  "name": "Chevron",
+  "description": "A minimalist light pollution map and dark sky locator for stargazers and astrophotographers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

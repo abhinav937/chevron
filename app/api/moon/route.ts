@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMoonData } from '@/lib/astronomy';
-import { isoDateToday } from '@/lib/utils';
+import { isoDateToday, parseLocalDate } from '@/lib/utils';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -12,8 +12,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'lat and lon query params required' }, { status: 400 });
   }
 
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) {
+  const date = parseLocalDate(dateStr);
+  if (!date) {
     return NextResponse.json({ error: 'Invalid date format' }, { status: 400 });
   }
 

@@ -3,7 +3,7 @@ import { getLorenzRating } from '@/lib/lorenz';
 import { getWeatherData } from '@/lib/weather';
 import { getMoonData } from '@/lib/astronomy';
 import { InsightsPayload, InsightsRequest } from '@/types';
-import { clamp } from '@/lib/utils';
+import { clamp, parseLocalDate } from '@/lib/utils';
 
 function computeScore(
   cloudCover: number,
@@ -35,7 +35,9 @@ export async function POST(req: NextRequest) {
   }
 
   const coords = { lat, lon };
-  const targetDate = date ? new Date(date) : new Date();
+  // Accept a date-only string (parsed as local midnight to avoid UTC day-shift)
+  // or a full ISO timestamp; default to now.
+  const targetDate = date ? parseLocalDate(date) ?? new Date(date) : new Date();
 
   const [lorenz, weather, moon] = await Promise.all([
     getLorenzRating(coords),

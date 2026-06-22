@@ -1,4 +1,4 @@
-import { clamp, degreesToRadians, radiansToDegrees, toJulianDay, isoDateToday } from '@/lib/utils';
+import { clamp, degreesToRadians, radiansToDegrees, toJulianDay, isoDateToday, parseLocalDate } from '@/lib/utils';
 
 describe('clamp', () => {
   it('returns value when within range', () => expect(clamp(5, 0, 10)).toBe(5));
@@ -44,5 +44,32 @@ describe('isoDateToday', () => {
   it('matches today\'s date', () => {
     const today = new Date().toISOString().split('T')[0];
     expect(isoDateToday()).toBe(today);
+  });
+});
+
+describe('parseLocalDate', () => {
+  it('parses a valid date at local midnight (no UTC day-shift)', () => {
+    const d = parseLocalDate('2026-06-22');
+    expect(d).not.toBeNull();
+    expect(d!.getFullYear()).toBe(2026);
+    expect(d!.getMonth()).toBe(5); // June (0-indexed)
+    expect(d!.getDate()).toBe(22);
+    expect(d!.getHours()).toBe(0);
+  });
+
+  it('rejects out-of-range months and days', () => {
+    expect(parseLocalDate('2026-13-01')).toBeNull();
+    expect(parseLocalDate('2026-00-10')).toBeNull();
+    expect(parseLocalDate('2026-06-32')).toBeNull();
+  });
+
+  it('rejects rollover dates like Feb 30', () => {
+    expect(parseLocalDate('2026-02-30')).toBeNull();
+  });
+
+  it('rejects malformed strings', () => {
+    expect(parseLocalDate('2026-06')).toBeNull();
+    expect(parseLocalDate('not-a-date')).toBeNull();
+    expect(parseLocalDate('2026/06/22')).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { Coordinates, MoonData } from '@/types';
-import { degreesToRadians, radiansToDegrees, toJulianDay } from './utils';
+import { degreesToRadians, radiansToDegrees, toJulianDay } from './geo';
 
 function moonIllumination(jdn: number): { illumination: number; phase: string } {
   const k = (jdn - 2451550.1) / 29.530588853;
@@ -19,8 +19,6 @@ function moonIllumination(jdn: number): { illumination: number; phase: string } 
   return { illumination, phase: phaseName };
 }
 
-// Approximates astronomical twilight boundaries for a given date + location.
-// Returns null start/end when continuous daylight or darkness applies (polar regions).
 function astronomicalDarkWindow(
   date: Date,
   coords: Coordinates
@@ -33,17 +31,12 @@ function astronomicalDarkWindow(
     -23.45 * Math.cos((2 * Math.PI * (dayOfYear + 10)) / 365)
   );
 
-  // Hour angle threshold for astronomical twilight (-18° below horizon)
   const cosH =
     (Math.cos(degreesToRadians(108)) - Math.sin(lat) * Math.sin(declination)) /
     (Math.cos(lat) * Math.cos(declination));
 
-  if (cosH < -1) {
-    // Midnight sun — no astronomical darkness
-    return { start: null, end: null, darkMinutes: 0 };
-  }
+  if (cosH < -1) return { start: null, end: null, darkMinutes: 0 };
   if (cosH > 1) {
-    // Polar night — always dark
     const start = new Date(date);
     start.setHours(0, 0, 0, 0);
     const end = new Date(date);
@@ -56,12 +49,10 @@ function astronomicalDarkWindow(
   const startHour = noonUTC + H / 15;
   const endHour = noonUTC + (24 - H / 15);
 
-  // startHour/endHour are UTC hours, so set them with setUTCHours — using local
-  // setHours would offset the emitted ISO timestamps by the server's timezone.
   const startDate = new Date(date);
-  startDate.setUTCHours(Math.floor(startHour), Math.round((startHour % 1) * 60), 0, 0);
+  startDate.setHours(Math.floor(startHour), Math.round((startHour % 1) * 60), 0, 0);
   const endDate = new Date(date);
-  endDate.setUTCHours(Math.floor(endHour % 24), Math.round(((endHour % 1) * 60) % 60), 0, 0);
+  endDate.setHours(Math.floor(endHour % 24), Math.round(((endHour % 1) * 60) % 60), 0, 0);
 
   return {
     start: startDate.toISOString(),
@@ -78,7 +69,7 @@ export async function getMoonData(date: Date, coords: Coordinates): Promise<Moon
   return {
     phase,
     illumination,
-    riseTime: null,   // TODO: implement rise/set with USNO or similar
+    riseTime: null,
     setTime: null,
     astronomicalDarkStart: darkWindow.start,
     astronomicalDarkEnd: darkWindow.end,
