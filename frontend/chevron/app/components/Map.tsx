@@ -48,7 +48,7 @@ export default function Map({ lat, lng, overlays, cloudGrid }: Props) {
     if (!dataUrl) return;
 
     const layer = L.imageOverlay(dataUrl, cloudGridBounds(cloudGrid), {
-      opacity: 0.85,
+      opacity: 0.8,
       interactive: false,
       pane: "cloudPane",
       className: "cloud-overlay",

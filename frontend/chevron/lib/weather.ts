@@ -65,48 +65,47 @@ export async function getWeatherData(coords: Coordinates): Promise<WeatherData> 
   };
 }
 
-export async function getCloudCoverAt(coords: Coordinates): Promise<number> {
-  const hourly = await fetchHourlyCloud(coords);
-  return hourly.cloudCover;
-}
-
-async function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
+/**
+ * Samples cloud cover across a dense `steps × steps` grid centered on `center`
+ * in a SINGLE Open-Meteo request (multi-location coordinates), so the overlay
+ * reflects real regional structure (clear vs cloudy areas) rather than a few
+ * smeared points. Grid rows run south → north (row 0 = southernmost).
+ */
 export async function getCloudGrid(
   center: Coordinates,
   spanDeg = 5,
-  steps = 3
+  steps = 10
 ): Promise<CloudGrid> {
   const half = spanDeg / 2;
   const step = steps > 1 ? spanDeg / (steps - 1) : 0;
-  const coords: Coordinates[] = [];
+  const lats: number[] = [];
+  const lons: number[] = [];
 
   for (let row = 0; row < steps; row++) {
     for (let col = 0; col < steps; col++) {
-      coords.push({
-        lat: center.lat - half + row * step,
-        lon: center.lon - half + col * step,
-      });
+      lats.push(Number((center.lat - half + row * step).toFixed(4)));
+      lons.push(Number((center.lon - half + col * step).toFixed(4)));
     }
   }
 
-  // Batch requests to avoid Open-Meteo 429 rate limits (free tier)
-  const points: CloudGridPoint[] = [];
-  const batchSize = 3;
-  for (let i = 0; i < coords.length; i += batchSize) {
-    const batch = coords.slice(i, i + batchSize);
-    const batchResults = await Promise.all(
-      batch.map(async c => ({
-        lat: c.lat,
-        lon: c.lon,
-        cloudCover: await getCloudCoverAt(c),
-      }))
-    );
-    points.push(...batchResults);
-    if (i + batchSize < coords.length) await sleep(250);
-  }
+  const url = new URL(`${OPEN_METEO_BASE}/forecast`);
+  url.searchParams.set('latitude', lats.join(','));
+  url.searchParams.set('longitude', lons.join(','));
+  url.searchParams.set('current', 'cloud_cover');
+  url.searchParams.set('timezone', 'UTC');
+
+  const res = await fetch(url.toString(), { next: { revalidate: 1800 } });
+  if (!res.ok) throw new Error(`Open-Meteo grid error: ${res.status}`);
+
+  // Multi-location responses are an array in the same order as the input coords.
+  const data = await res.json();
+  const arr: any[] = Array.isArray(data) ? data : [data];
+
+  const points: CloudGridPoint[] = lats.map((lat, i) => ({
+    lat,
+    lon: lons[i],
+    cloudCover: arr[i]?.current?.cloud_cover ?? 0,
+  }));
 
   return { center, spanDeg, points };
 }

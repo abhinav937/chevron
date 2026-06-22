@@ -324,7 +324,7 @@ export default function Page() {
                     <span>clear</span>
                     <span
                       className="h-1.5 flex-1 max-w-[160px] rounded-full"
-                      style={{ background: "linear-gradient(90deg, rgba(120,150,200,0.15), rgba(200,214,240,0.55), rgba(240,243,250,0.85))" }}
+                      style={{ background: "linear-gradient(90deg, rgba(150,170,205,0), rgba(190,200,222,0.3), rgba(240,245,250,0.48))" }}
                     />
                     <span>overcast</span>
                   </div>

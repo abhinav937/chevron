@@ -6,15 +6,16 @@ import { CloudGrid } from '@/types';
  * Alpha stays well below opaque so the map underneath remains legible.
  */
 function cloudRGBA(c: number): [number, number, number, number] {
-  // Gentle curve: very light cloud (<~5%) fades to nothing so clear sky stays clean.
-  const t = Math.min(1, Math.max(0, (c - 0.03) / 0.97));
-  const eased = Math.pow(t, 0.85);
+  // Clear sky (<~12%) stays fully transparent; the veil ramps up gently so even
+  // full overcast keeps the light-pollution map readable underneath.
+  const t = Math.min(1, Math.max(0, (c - 0.12) / 0.88));
+  const eased = Math.pow(t, 0.9);
 
-  // Cool slate-blue (thin) → soft warm white (thick).
-  const r = Math.round(120 + eased * 120);
-  const g = Math.round(150 + eased * 95);
-  const b = Math.round(200 + eased * 52);
-  const alpha = Math.round(eased * 165); // 0..165 (~0.65 max)
+  // Cool slate-blue (thin) → soft white (thick).
+  const r = Math.round(150 + eased * 90);
+  const g = Math.round(170 + eased * 75);
+  const b = Math.round(205 + eased * 45);
+  const alpha = Math.round(eased * 122); // 0..122 (~0.48 max, before layer opacity)
 
   return [r, g, b, alpha];
 }
