@@ -21,11 +21,12 @@ The frontend is handled separately. This repo is the **Next.js full-stack backen
 ## Commands
 
 ```bash
-npm run dev       # Start dev server (localhost:3000)
-npm run build     # Production build
-npm run lint      # ESLint
-npm run test      # Run tests
-npm run test -- --testPathPattern=<file>  # Run a single test file
+npm install                                    # Install dependencies
+npm run dev                                    # Start dev server (localhost:3000)
+npm run build                                  # Production build
+npm run lint                                   # ESLint
+npm test                                       # Run all tests
+npm test -- --testPathPattern=lib/astronomy    # Run a single test file
 ```
 
 ## Architecture
