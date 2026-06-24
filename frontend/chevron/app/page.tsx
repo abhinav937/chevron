@@ -289,7 +289,6 @@ export default function Page() {
                 lat={selected.lat}
                 lng={selected.lng}
                 overlays={overlays}
-                cloudGrid={conditions?.cloudGrid ?? null}
               />
 
               {/* Overlay controls */}

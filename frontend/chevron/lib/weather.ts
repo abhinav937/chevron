@@ -1,4 +1,4 @@
-import { CloudGrid, CloudGridPoint, Coordinates, WeatherData, WeatherHour } from '@/types';
+import { CloudGrid, CloudGridPoint, Coordinates, GeoBounds, WeatherData, WeatherHour } from '@/types';
 
 const OPEN_METEO_BASE = 'https://api.open-meteo.com/v1';
 
@@ -66,25 +66,29 @@ export async function getWeatherData(coords: Coordinates): Promise<WeatherData> 
 }
 
 /**
- * Samples cloud cover across a dense `steps × steps` grid centered on `center`
+ * Samples cloud cover across a dense `steps × steps` grid spanning `bounds`
  * in a SINGLE Open-Meteo request (multi-location coordinates), so the overlay
- * reflects real regional structure (clear vs cloudy areas) rather than a few
- * smeared points. Grid rows run south → north (row 0 = southernmost).
+ * reflects real regional structure (clear vs cloudy areas) for whatever the map
+ * is currently showing. Grid rows run south → north (row 0 = southernmost),
+ * columns west → east (col 0 = westernmost).
  */
-export async function getCloudGrid(
-  center: Coordinates,
-  spanDeg = 5,
-  steps = 10
-): Promise<CloudGrid> {
-  const half = spanDeg / 2;
-  const step = steps > 1 ? spanDeg / (steps - 1) : 0;
+export async function getCloudGrid(bounds: GeoBounds, steps = 10): Promise<CloudGrid> {
+  // Clamp to valid / mercator-safe ranges.
+  const south = Math.max(-85, Math.min(bounds.south, bounds.north));
+  const north = Math.min(85, Math.max(bounds.south, bounds.north));
+  const west = Math.max(-180, bounds.west);
+  const east = Math.min(180, bounds.east);
+  const safe: GeoBounds = { south, west, north, east };
+
+  const latStep = steps > 1 ? (north - south) / (steps - 1) : 0;
+  const lonStep = steps > 1 ? (east - west) / (steps - 1) : 0;
   const lats: number[] = [];
   const lons: number[] = [];
 
   for (let row = 0; row < steps; row++) {
     for (let col = 0; col < steps; col++) {
-      lats.push(Number((center.lat - half + row * step).toFixed(4)));
-      lons.push(Number((center.lon - half + col * step).toFixed(4)));
+      lats.push(Number((south + row * latStep).toFixed(4)));
+      lons.push(Number((west + col * lonStep).toFixed(4)));
     }
   }
 
@@ -107,7 +111,7 @@ export async function getCloudGrid(
     cloudCover: arr[i]?.current?.cloud_cover ?? 0,
   }));
 
-  return { center, spanDeg, points };
+  return { bounds: safe, steps, points };
 }
 
 export function hasUpcomingPrecipitation(forecast: WeatherHour[], hours = 12): boolean {

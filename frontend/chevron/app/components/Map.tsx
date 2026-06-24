@@ -19,10 +19,9 @@ interface Props {
   lat: number;
   lng: number;
   overlays: MapOverlays;
-  cloudGrid: CloudGrid | null;
 }
 
-export default function Map({ lat, lng, overlays, cloudGrid }: Props) {
+export default function Map({ lat, lng, overlays }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const lpLayerRef = useRef<any>(null);
@@ -30,9 +29,14 @@ export default function Map({ lat, lng, overlays, cloudGrid }: Props) {
   const radarLayerRef = useRef<any>(null);
   const leafletRef = useRef<any>(null);
   const radarFrameRef = useRef<RainViewerFrame | null>(null);
+  const cloudGridRef = useRef<CloudGrid | null>(null);
+  const cloudFetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cloudReqId = useRef(0);
+  const cloudsOnRef = useRef(overlays.clouds);
   const [mapReady, setMapReady] = useState(false);
 
-  const syncCloudLayer = useCallback(() => {
+  // Draw (or clear) the cloud overlay from whatever grid is currently cached.
+  const drawCloudLayer = useCallback(() => {
     const L = leafletRef.current;
     const map = mapRef.current;
     if (!L || !map) return;
@@ -42,12 +46,13 @@ export default function Map({ lat, lng, overlays, cloudGrid }: Props) {
       cloudLayerRef.current = null;
     }
 
-    if (!overlays.clouds || !cloudGrid || cloudGrid.points.length === 0) return;
+    const grid = cloudGridRef.current;
+    if (!cloudsOnRef.current || !grid || grid.points.length === 0) return;
 
-    const dataUrl = cloudGridToDataUrl(cloudGrid);
+    const dataUrl = cloudGridToDataUrl(grid);
     if (!dataUrl) return;
 
-    const layer = L.imageOverlay(dataUrl, cloudGridBounds(cloudGrid), {
+    const layer = L.imageOverlay(dataUrl, cloudGridBounds(grid), {
       opacity: 0.8,
       interactive: false,
       pane: "cloudPane",
@@ -56,8 +61,53 @@ export default function Map({ lat, lng, overlays, cloudGrid }: Props) {
     });
     cloudLayerRef.current = layer;
     layer.addTo(map);
-    layer.bringToFront();
-  }, [overlays.clouds, cloudGrid]);
+  }, []);
+
+  // Fetch a cloud grid for the current viewport, then redraw. Debounced by caller.
+  const fetchCloudGridForViewport = useCallback(async () => {
+    const map = mapRef.current;
+    if (!map || !cloudsOnRef.current) return;
+
+    // Before the container is laid out, getSize().x can be 0, which collapses
+    // the longitude span to a zero-width overlay. Retry once layout settles.
+    const size = map.getSize();
+    if (!size || size.x < 2 || size.y < 2) {
+      map.invalidateSize();
+      if (cloudFetchTimer.current) clearTimeout(cloudFetchTimer.current);
+      cloudFetchTimer.current = setTimeout(() => fetchCloudGridForViewport(), 250);
+      return;
+    }
+
+    const b = map.getBounds();
+    const bounds = {
+      south: b.getSouth(),
+      west: b.getWest(),
+      north: b.getNorth(),
+      east: b.getEast(),
+    };
+
+    const reqId = ++cloudReqId.current;
+    try {
+      const res = await fetch("/api/cloudgrid", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bounds }),
+      });
+      if (!res.ok) return;
+      const grid: CloudGrid = await res.json();
+      // Ignore stale responses (user moved again before this resolved).
+      if (reqId !== cloudReqId.current || !cloudsOnRef.current) return;
+      cloudGridRef.current = grid;
+      drawCloudLayer();
+    } catch {
+      /* clouds optional */
+    }
+  }, [drawCloudLayer]);
+
+  const scheduleCloudFetch = useCallback(() => {
+    if (cloudFetchTimer.current) clearTimeout(cloudFetchTimer.current);
+    cloudFetchTimer.current = setTimeout(fetchCloudGridForViewport, 400);
+  }, [fetchCloudGridForViewport]);
 
   const ensureRadarLayer = useCallback(() => {
     const L = leafletRef.current;
@@ -99,8 +149,15 @@ export default function Map({ lat, lng, overlays, cloudGrid }: Props) {
       }
     }
 
-    syncCloudLayer();
-  }, [overlays, ensureRadarLayer, syncCloudLayer]);
+    cloudsOnRef.current = overlays.clouds;
+    if (overlays.clouds) {
+      // Draw whatever we have immediately; fetch fresh data for this viewport.
+      drawCloudLayer();
+      fetchCloudGridForViewport();
+    } else {
+      drawCloudLayer(); // removes the layer
+    }
+  }, [overlays, ensureRadarLayer, drawCloudLayer, fetchCloudGridForViewport]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -155,6 +212,11 @@ export default function Map({ lat, lng, overlays, cloudGrid }: Props) {
       );
       lpLayerRef.current = lpLayer;
 
+      // Re-sample clouds for the new viewport whenever the user stops moving.
+      map.on("moveend", () => {
+        if (cloudsOnRef.current) scheduleCloudFetch();
+      });
+
       try {
         const radarRes = await fetch("/api/radar");
         if (radarRes.ok) {
@@ -169,6 +231,7 @@ export default function Map({ lat, lng, overlays, cloudGrid }: Props) {
     return () => {
       isMounted = false;
       setMapReady(false);
+      if (cloudFetchTimer.current) clearTimeout(cloudFetchTimer.current);
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -177,6 +240,7 @@ export default function Map({ lat, lng, overlays, cloudGrid }: Props) {
         radarLayerRef.current = null;
         leafletRef.current = null;
         radarFrameRef.current = null;
+        cloudGridRef.current = null;
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -29,7 +29,7 @@ function cloudRGBA(c: number): [number, number, number, number] {
  * the image top edge at the north bound, so rows are sampled flipped vertically.
  */
 export function cloudGridToDataUrl(grid: CloudGrid, resolution = 256): string {
-  const steps = Math.round(Math.sqrt(grid.points.length));
+  const steps = grid.steps || Math.round(Math.sqrt(grid.points.length));
   if (steps < 1) return '';
 
   const canvas = document.createElement('canvas');
@@ -84,10 +84,10 @@ export function cloudGridToDataUrl(grid: CloudGrid, resolution = 256): string {
 }
 
 export function cloudGridBounds(grid: CloudGrid): [[number, number], [number, number]] {
-  const half = grid.spanDeg / 2;
+  const { south, west, north, east } = grid.bounds;
   return [
-    [grid.center.lat - half, grid.center.lon - half],
-    [grid.center.lat + half, grid.center.lon + half],
+    [south, west],
+    [north, east],
   ];
 }
 

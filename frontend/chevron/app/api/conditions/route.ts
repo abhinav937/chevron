@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMoonData } from '@/lib/astronomy';
 import { buildRecommendation, computeScore, suggestOverlays } from '@/lib/conditions';
-import { getCloudGrid, getWeatherData } from '@/lib/weather';
+import { getWeatherData } from '@/lib/weather';
 import { ConditionsPayload } from '@/types';
 
 export async function POST(req: NextRequest) {
@@ -24,18 +24,6 @@ export async function POST(req: NextRequest) {
       getMoonData(targetDate, coords),
     ]);
 
-    let cloudGrid;
-    try {
-      cloudGrid = await getCloudGrid(coords);
-    } catch (gridError) {
-      console.warn('Cloud grid fallback:', gridError);
-      cloudGrid = {
-        center: coords,
-        spanDeg: 5,
-        points: [{ lat: coords.lat, lon: coords.lon, cloudCover: weather.cloudCover }],
-      };
-    }
-
     const overallScore = computeScore(
       weather.cloudCover,
       moon.illumination,
@@ -46,7 +34,6 @@ export async function POST(req: NextRequest) {
     const payload: ConditionsPayload = {
       weather,
       moon,
-      cloudGrid,
       overallScore,
       recommendation: buildRecommendation(overallScore, weather.cloudCover),
       suggestedOverlays: suggestOverlays(weather, moon, bortle),

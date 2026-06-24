@@ -36,9 +36,17 @@ export interface CloudGridPoint {
   cloudCover: number;
 }
 
+export interface GeoBounds {
+  south: number;
+  west: number;
+  north: number;
+  east: number;
+}
+
 export interface CloudGrid {
-  center: Coordinates;
-  spanDeg: number;
+  bounds: GeoBounds;
+  steps: number;
+  // Row-major, row 0 = southernmost, col 0 = westernmost.
   points: CloudGridPoint[];
 }
 
@@ -51,7 +59,6 @@ export interface SuggestedOverlays {
 export interface ConditionsPayload {
   weather: WeatherData;
   moon: MoonData;
-  cloudGrid: CloudGrid;
   overallScore: number;
   recommendation: string;
   suggestedOverlays: SuggestedOverlays;
