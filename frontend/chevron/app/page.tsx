@@ -74,7 +74,10 @@ export default function Page() {
     clouds: false,
     precipitation: false,
   });
+  const [focus, setFocus] = useState<{ lat: number; lng: number; zoom?: number; nonce: number } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const INITIAL_VIEW = { lat: 39.5, lng: -98.35, zoom: 4 }; // continental US
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -96,8 +99,9 @@ export default function Page() {
     }, 400);
   }, [query]);
 
-  async function selectLocation(loc: Location) {
+  async function selectLocation(loc: Location, fly = true) {
     setSelected(loc);
+    if (fly) setFocus({ lat: loc.lat, lng: loc.lng, zoom: 8, nonce: Date.now() });
     setQuery("");
     setGeocodeResults([]);
     setInsight(null);
@@ -175,6 +179,14 @@ export default function Page() {
     });
   }
 
+  function handleMapPick(lat: number, lng: number) {
+    // Pin where the user clicked — don't recenter the map (fly = false).
+    selectLocation(
+      { name: `${lat.toFixed(4)}, ${lng.toFixed(4)}`, lat, lng, bortle: getBortle(lat, lng) },
+      false
+    );
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== "Enter") return;
     if (geocodeResults.length > 0) { selectFromNominatim(geocodeResults[0]); return; }
@@ -198,23 +210,18 @@ export default function Page() {
   }
 
   return (
-    <div className="min-h-screen font-mono text-[var(--text)] bg-[var(--bg)]">
-      <div className="max-w-3xl mx-auto px-5 sm:px-6 py-10 sm:py-14 text-sm">
-
-        <header className="mb-9 flex items-end justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-bold tracking-[0.3em] uppercase">Chevron</h1>
-            <p className="text-[11px] text-[var(--text-dim)] uppercase tracking-[0.2em]">
-              Dark sky planning atlas
-            </p>
-          </div>
-          <p className="hidden sm:block text-[10px] text-[var(--text-faint)] text-right leading-relaxed uppercase tracking-wider">
-            Lorenz 2024 · Grok AI<br />OpenStreetMap
+    <div className="h-screen flex flex-col lg:flex-row font-mono text-[var(--text)] bg-[var(--bg)] overflow-hidden">
+      {/* Sidebar */}
+      <aside className="lg:w-[400px] lg:h-screen shrink-0 overflow-y-auto border-b lg:border-b-0 lg:border-r border-[var(--border)] p-5 sm:p-6 space-y-6 text-sm">
+        <header className="space-y-1">
+          <h1 className="text-2xl font-bold tracking-[0.3em] uppercase">Chevron</h1>
+          <p className="text-[11px] text-[var(--text-dim)] uppercase tracking-[0.2em]">
+            Dark sky planning atlas
           </p>
         </header>
 
         {/* Search */}
-        <section className="mb-8 space-y-3">
+        <section className="space-y-3">
           <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-dim)]">Search any location</p>
           <div className="flex gap-2">
             <input
@@ -223,7 +230,7 @@ export default function Page() {
               onChange={e => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="city, park, region or lat, lng"
-              className="flex-1 rounded-md border border-[var(--border)] bg-[var(--panel)] px-3.5 py-2.5 text-xs outline-none placeholder-[var(--text-faint)] focus:border-[var(--accent)] transition-colors"
+              className="flex-1 min-w-0 rounded-md border border-[var(--border)] bg-[var(--panel)] px-3.5 py-2.5 text-xs outline-none placeholder-[var(--text-faint)] focus:border-[var(--accent)] transition-colors"
             />
             <button
               onClick={() => geocodeResults.length > 0 ? selectFromNominatim(geocodeResults[0]) : undefined}
@@ -232,6 +239,7 @@ export default function Page() {
               go
             </button>
           </div>
+          <p className="text-[10px] text-[var(--text-faint)]">…or click anywhere on the map to pin a spot.</p>
           {geocoding && <p className="text-xs text-[var(--text-faint)]">searching…</p>}
           {!geocoding && geocodeResults.length > 0 && (
             <ul className="rounded-md border border-[var(--border)] bg-[var(--panel)] overflow-hidden divide-y divide-[var(--border)]">
@@ -253,7 +261,7 @@ export default function Page() {
         {!selected && (
           <section className="space-y-3">
             <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-dim)]">Featured dark sites</p>
-            <ul className="grid sm:grid-cols-2 gap-2">
+            <ul className="space-y-2">
               {DARK_SPOTS.map(s => (
                 <li key={s.name}>
                   <button
@@ -288,91 +296,8 @@ export default function Page() {
               </button>
             </div>
 
-            {/* Map card */}
-            <div className="rounded-lg border border-[var(--border)] overflow-hidden bg-[var(--panel)]">
-              <Map
-                lat={selected.lat}
-                lng={selected.lng}
-                overlays={overlays}
-              />
-
-              {/* Overlay controls */}
-              <div className="px-4 py-3.5 border-t border-[var(--border)] space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  {(Object.keys(OVERLAY_META) as (keyof MapOverlays)[])
-                    .filter(key => key !== "clouds" || CLOUD_OVERLAY_ENABLED)
-                    .map(key => {
-                    const active = overlays[key];
-                    const meta = OVERLAY_META[key];
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => setOverlays(prev => ({ ...prev, [key]: !prev[key] }))}
-                        className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] uppercase tracking-wider transition-colors ${
-                          active
-                            ? "border-[var(--border-strong)] bg-[var(--panel-2)] text-[var(--text)]"
-                            : "border-[var(--border)] text-[var(--text-faint)] hover:text-[var(--text-dim)]"
-                        }`}
-                      >
-                        <span
-                          className="w-2.5 h-2.5 rounded-full transition-opacity"
-                          style={{ background: meta.dot, opacity: active ? 1 : 0.25 }}
-                        />
-                        {meta.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Cloud legend — discrete bands with % ranges */}
-                {overlays.clouds && (
-                  <div className="space-y-1">
-                    <p className="text-[9px] uppercase tracking-wider text-[var(--text-faint)]">cloud cover</p>
-                    <div className="flex flex-wrap gap-x-3 gap-y-1">
-                      {CLOUD_BANDS.map((b, i) => {
-                        const lower = i === 0 ? 0 : CLOUD_BANDS[i - 1].max;
-                        const upper = Math.min(100, b.max);
-                        const [r, g, bl, a] = b.rgba;
-                        return (
-                          <span key={i} className="flex items-center gap-1 text-[9px] text-[var(--text-dim)]">
-                            <span
-                              className="w-3 h-3 rounded-sm border border-[var(--border)]"
-                              style={{ background: `rgba(${r},${g},${bl},${a / 255})` }}
-                            />
-                            {lower}–{upper}%
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Status line */}
-                {loading && !conditions && (
-                  <p className="text-[10px] text-[var(--text-faint)]">loading weather overlays…</p>
-                )}
-                {conditionsError && (
-                  <p className="text-[10px] text-[var(--bad)]">weather data unavailable — light pollution overlay only</p>
-                )}
-                {conditions && (
-                  <p className="text-[10px] text-[var(--text-faint)]">
-                    auto-enabled: {[
-                      CLOUD_OVERLAY_ENABLED && conditions.suggestedOverlays.clouds && "clouds",
-                      conditions.suggestedOverlays.precipitation && "radar",
-                    ].filter(Boolean).join(", ") || "clear skies — light pollution only"}
-                  </p>
-                )}
-                <p className="text-[9px] text-[var(--text-faint)]">
-                  © <a href="https://www.openstreetmap.org/copyright" className="underline hover:no-underline" target="_blank" rel="noreferrer">OpenStreetMap</a> · CARTO
-                  {overlays.lightPollution && " · Lorenz 2024"}
-                  {overlays.clouds && " · Open-Meteo"}
-                  {overlays.precipitation && " · RainViewer"}
-                </p>
-              </div>
-            </div>
-
             {/* Metrics */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               {[
                 {
                   label: "Bortle",
@@ -443,10 +368,83 @@ export default function Page() {
           </section>
         )}
 
-        <footer className="mt-16 pt-5 border-t border-[var(--border)] text-[10px] text-[var(--text-faint)] uppercase tracking-[0.15em]">
+        <footer className="pt-5 border-t border-[var(--border)] text-[10px] text-[var(--text-faint)] uppercase tracking-[0.15em]">
           Chevron · Lorenz Atlas 2024 · Grok AI
         </footer>
-      </div>
+      </aside>
+
+      {/* Map pane */}
+      <main className="relative flex-1 min-h-[55vh] lg:h-screen">
+        <Map
+          marker={selected ? { lat: selected.lat, lng: selected.lng } : null}
+          focus={focus}
+          initialView={INITIAL_VIEW}
+          overlays={overlays}
+          onPick={handleMapPick}
+        />
+
+        {/* Floating overlay controls */}
+        <div className="absolute bottom-3 left-3 z-[1000] max-w-[calc(100%-1.5rem)] rounded-lg border border-[var(--border)] bg-[var(--panel)]/95 backdrop-blur px-3 py-2.5 space-y-2">
+          <div className="flex flex-wrap gap-2">
+            {(Object.keys(OVERLAY_META) as (keyof MapOverlays)[])
+              .filter(key => key !== "clouds" || CLOUD_OVERLAY_ENABLED)
+              .map(key => {
+                const active = overlays[key];
+                const meta = OVERLAY_META[key];
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setOverlays(prev => ({ ...prev, [key]: !prev[key] }))}
+                    className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] uppercase tracking-wider transition-colors ${
+                      active
+                        ? "border-[var(--border-strong)] bg-[var(--panel-2)] text-[var(--text)]"
+                        : "border-[var(--border)] text-[var(--text-faint)] hover:text-[var(--text-dim)]"
+                    }`}
+                  >
+                    <span
+                      className="w-2.5 h-2.5 rounded-full transition-opacity"
+                      style={{ background: meta.dot, opacity: active ? 1 : 0.25 }}
+                    />
+                    {meta.label}
+                  </button>
+                );
+              })}
+          </div>
+
+          {/* Cloud legend — discrete bands with % ranges */}
+          {overlays.clouds && (
+            <div className="flex flex-wrap gap-x-3 gap-y-1 pt-0.5">
+              {CLOUD_BANDS.map((b, i) => {
+                const lower = i === 0 ? 0 : CLOUD_BANDS[i - 1].max;
+                const upper = Math.min(100, b.max);
+                const [r, g, bl, a] = b.rgba;
+                return (
+                  <span key={i} className="flex items-center gap-1 text-[9px] text-[var(--text-dim)]">
+                    <span
+                      className="w-3 h-3 rounded-sm border border-[var(--border)]"
+                      style={{ background: `rgba(${r},${g},${bl},${a / 255})` }}
+                    />
+                    {lower}–{upper}%
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          <p className="text-[9px] text-[var(--text-faint)]">
+            © <a href="https://www.openstreetmap.org/copyright" className="underline hover:no-underline" target="_blank" rel="noreferrer">OpenStreetMap</a> · CARTO
+            {overlays.lightPollution && " · Lorenz 2024"}
+            {overlays.precipitation && " · RainViewer"}
+          </p>
+        </div>
+
+        {/* Click-to-pin hint when nothing selected */}
+        {!selected && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] rounded-full border border-[var(--border-strong)] bg-[var(--panel)]/95 backdrop-blur px-4 py-1.5 text-[10px] uppercase tracking-wider text-[var(--text-dim)] pointer-events-none">
+            click the map to pin a location
+          </div>
+        )}
+      </main>
     </div>
   );
 }

@@ -21,14 +21,23 @@ export interface MapOverlays {
 const MIN_CLOUD_ZOOM = 6;
 
 interface Props {
-  lat: number;
-  lng: number;
+  /** Pin position; null = no marker. */
+  marker: { lat: number; lng: number } | null;
+  /** Bump `nonce` to recenter the map (search/featured picks). Map clicks don't. */
+  focus: { lat: number; lng: number; zoom?: number; nonce: number } | null;
+  /** Initial view when the map first loads. */
+  initialView: { lat: number; lng: number; zoom: number };
   overlays: MapOverlays;
+  /** Called when the user clicks the map to drop a pin. */
+  onPick: (lat: number, lng: number) => void;
 }
 
-export default function Map({ lat, lng, overlays }: Props) {
+export default function Map({ marker, focus, initialView, overlays, onPick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
   const lpLayerRef = useRef<any>(null);
   const cloudLayerRef = useRef<any>(null);
   const radarLayerRef = useRef<any>(null);
@@ -207,8 +216,13 @@ export default function Map({ lat, lng, overlays }: Props) {
       const map = L.map(containerRef.current, {
         zoomControl: true,
         attributionControl: false,
-      }).setView([lat, lng], 8);
+      }).setView([initialView.lat, initialView.lng], initialView.zoom);
       mapRef.current = map;
+
+      // Click anywhere to drop a pin at that location.
+      map.on("click", (e: any) => {
+        onPickRef.current(e.latlng.lat, e.latlng.lng);
+      });
 
       // Explicit panes so overlays stack predictably:
       // base tiles (200) < light pollution (350) < clouds (400) < radar (450).
@@ -278,16 +292,26 @@ export default function Map({ lat, lng, overlays }: Props) {
     syncOverlays();
   }, [mapReady, syncOverlays]);
 
+  // Marker tracks the pinned location without moving the view.
   useEffect(() => {
-    if (!mapRef.current) return;
-    import("leaflet").then(L => {
-      mapRef.current.setView([lat, lng], 8);
-      mapRef.current.eachLayer((layer: any) => {
-        if (layer instanceof L.Marker) mapRef.current.removeLayer(layer);
-      });
-      L.marker([lat, lng]).addTo(mapRef.current);
-    });
-  }, [lat, lng, mapReady]);
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    if (!L || !map || !mapReady) return;
+    if (markerRef.current) {
+      map.removeLayer(markerRef.current);
+      markerRef.current = null;
+    }
+    if (marker) {
+      markerRef.current = L.marker([marker.lat, marker.lng]).addTo(map);
+    }
+  }, [marker, mapReady]);
+
+  // Recenter only on explicit focus changes (search / featured picks).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !focus) return;
+    map.setView([focus.lat, focus.lng], focus.zoom ?? map.getZoom());
+  }, [focus, mapReady]);
 
   return (
     <>
@@ -296,8 +320,8 @@ export default function Map({ lat, lng, overlays }: Props) {
         href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         crossOrigin=""
       />
-      <div style={{ position: "relative" }}>
-        <div ref={containerRef} style={{ height: "460px", width: "100%" }} />
+      <div style={{ position: "relative", height: "100%", width: "100%" }}>
+        <div ref={containerRef} style={{ height: "100%", width: "100%" }} />
         {overlays.clouds && cloudZoomedOut && (
           <div
             style={{ zIndex: 500 }}
