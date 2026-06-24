@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import type { MapOverlays } from "./components/Map";
 import type { ConditionsPayload } from "@/types";
 import { CLOUD_BANDS } from "@/lib/cloudOverlay";
+import { CLOUD_OVERLAY_ENABLED } from "@/lib/featureFlags";
 
 const Map = dynamic(() => import("./components/Map"), { ssr: false });
 
@@ -115,7 +116,10 @@ export default function Page() {
         const data: ConditionsPayload = await conditionsRes.json();
         conditionsData = data;
         setConditions(data);
-        setOverlays(data.suggestedOverlays);
+        setOverlays({
+          ...data.suggestedOverlays,
+          clouds: CLOUD_OVERLAY_ENABLED && data.suggestedOverlays.clouds,
+        });
       } else {
         setConditionsError(true);
       }
@@ -295,7 +299,9 @@ export default function Page() {
               {/* Overlay controls */}
               <div className="px-4 py-3.5 border-t border-[var(--border)] space-y-3">
                 <div className="flex flex-wrap gap-2">
-                  {(Object.keys(OVERLAY_META) as (keyof MapOverlays)[]).map(key => {
+                  {(Object.keys(OVERLAY_META) as (keyof MapOverlays)[])
+                    .filter(key => key !== "clouds" || CLOUD_OVERLAY_ENABLED)
+                    .map(key => {
                     const active = overlays[key];
                     const meta = OVERLAY_META[key];
                     return (
@@ -351,7 +357,7 @@ export default function Page() {
                 {conditions && (
                   <p className="text-[10px] text-[var(--text-faint)]">
                     auto-enabled: {[
-                      conditions.suggestedOverlays.clouds && "clouds",
+                      CLOUD_OVERLAY_ENABLED && conditions.suggestedOverlays.clouds && "clouds",
                       conditions.suggestedOverlays.precipitation && "radar",
                     ].filter(Boolean).join(", ") || "clear skies — light pollution only"}
                   </p>

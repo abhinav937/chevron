@@ -8,6 +8,7 @@ import {
   type RainViewerFrame,
 } from "@/lib/cloudOverlay";
 import { CloudGrid } from "@/types";
+import { CLOUD_OVERLAY_ENABLED } from "@/lib/featureFlags";
 
 export interface MapOverlays {
   lightPollution: boolean;
@@ -175,8 +176,8 @@ export default function Map({ lat, lng, overlays }: Props) {
       }
     }
 
-    cloudsOnRef.current = overlays.clouds;
-    if (overlays.clouds) {
+    cloudsOnRef.current = CLOUD_OVERLAY_ENABLED && overlays.clouds;
+    if (cloudsOnRef.current) {
       // Draw whatever we have immediately; fetch fresh data for this viewport.
       drawCloudLayer();
       fetchCloudGridForViewport();
