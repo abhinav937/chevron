@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import type { MapOverlays } from "./components/Map";
 import type { ConditionsPayload } from "@/types";
+import { CLOUD_BANDS } from "@/lib/cloudOverlay";
 
 const Map = dynamic(() => import("./components/Map"), { ssr: false });
 
@@ -317,15 +318,26 @@ export default function Page() {
                   })}
                 </div>
 
-                {/* Cloud legend */}
+                {/* Cloud legend — discrete bands with % ranges */}
                 {overlays.clouds && (
-                  <div className="flex items-center gap-2 text-[9px] uppercase tracking-wider text-[var(--text-faint)]">
-                    <span>clear</span>
-                    <span
-                      className="h-1.5 flex-1 max-w-[160px] rounded-full"
-                      style={{ background: "linear-gradient(90deg, rgba(150,170,205,0), rgba(190,200,222,0.3), rgba(240,245,250,0.48))" }}
-                    />
-                    <span>overcast</span>
+                  <div className="space-y-1">
+                    <p className="text-[9px] uppercase tracking-wider text-[var(--text-faint)]">cloud cover</p>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      {CLOUD_BANDS.map((b, i) => {
+                        const lower = i === 0 ? 0 : CLOUD_BANDS[i - 1].max;
+                        const upper = Math.min(100, b.max);
+                        const [r, g, bl, a] = b.rgba;
+                        return (
+                          <span key={i} className="flex items-center gap-1 text-[9px] text-[var(--text-dim)]">
+                            <span
+                              className="w-3 h-3 rounded-sm border border-[var(--border)]"
+                              style={{ background: `rgba(${r},${g},${bl},${a / 255})` }}
+                            />
+                            {lower}–{upper}%
+                          </span>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 

@@ -1,23 +1,26 @@
 import { CloudGrid } from '@/types';
 
 /**
- * Maps a cloud-cover fraction (0..1) to an RGBA tuple tuned for a dark basemap.
- * Thin cloud reads as a faint cool haze; thick cloud as a soft, brighter white.
- * Alpha stays well below opaque so the map underneath remains legible.
+ * Discrete cloud-cover bands (% → RGBA), so the overlay reads like a weather
+ * contour map: each level of cloudiness is a visibly distinct shade rather than
+ * an indistinguishable white haze. Mirrored by the legend in the UI.
+ * Brightness/opacity both increase with cover; clear sky is fully transparent.
  */
+export const CLOUD_BANDS: { max: number; label: string; rgba: [number, number, number, number] }[] = [
+  { max: 10, label: '0–10% clear', rgba: [0, 0, 0, 0] },
+  { max: 30, label: '10–30% few', rgba: [120, 170, 220, 70] },
+  { max: 50, label: '30–50% scattered', rgba: [150, 195, 225, 110] },
+  { max: 70, label: '50–70% broken', rgba: [195, 215, 235, 150] },
+  { max: 90, label: '70–90% mostly cloudy', rgba: [228, 236, 246, 188] },
+  { max: 101, label: '90–100% overcast', rgba: [248, 250, 253, 220] },
+];
+
 function cloudRGBA(c: number): [number, number, number, number] {
-  // Clear sky (<~12%) stays fully transparent; the veil ramps up gently so even
-  // full overcast keeps the light-pollution map readable underneath.
-  const t = Math.min(1, Math.max(0, (c - 0.12) / 0.88));
-  const eased = Math.pow(t, 0.9);
-
-  // Cool slate-blue (thin) → soft white (thick).
-  const r = Math.round(150 + eased * 90);
-  const g = Math.round(170 + eased * 75);
-  const b = Math.round(205 + eased * 45);
-  const alpha = Math.round(eased * 122); // 0..122 (~0.48 max, before layer opacity)
-
-  return [r, g, b, alpha];
+  const pct = c * 100;
+  for (const band of CLOUD_BANDS) {
+    if (pct < band.max) return band.rgba;
+  }
+  return CLOUD_BANDS[CLOUD_BANDS.length - 1].rgba;
 }
 
 /**
