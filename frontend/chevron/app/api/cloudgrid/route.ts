@@ -21,7 +21,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid bounds' }, { status: 400 });
     }
 
-    const steps = Math.min(12, Math.max(2, Number(body?.steps) || 10));
+    // 8x8 = 64 sample points keeps the overlay detailed while limiting how much
+    // of Open-Meteo's per-location free-tier quota each fetch consumes.
+    const steps = Math.min(12, Math.max(2, Number(body?.steps) || 8));
     const bounds: GeoBounds = { south, west, north, east };
     const grid = await getCloudGrid(bounds, steps);
 

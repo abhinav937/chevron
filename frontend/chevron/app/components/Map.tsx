@@ -33,6 +33,7 @@ export default function Map({ lat, lng, overlays }: Props) {
   const cloudFetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cloudReqId = useRef(0);
   const cloudsOnRef = useRef(overlays.clouds);
+  const lastCloudKey = useRef<string>("");
   const [mapReady, setMapReady] = useState(false);
 
   // Draw (or clear) the cloud overlay from whatever grid is currently cached.
@@ -86,6 +87,14 @@ export default function Map({ lat, lng, overlays }: Props) {
       east: b.getEast(),
     };
 
+    // Dedup: skip if the viewport hasn't meaningfully changed since the last
+    // fetch (e.g. setView + moveend firing back-to-back with identical bounds).
+    const key = [bounds.south, bounds.west, bounds.north, bounds.east]
+      .map(v => v.toFixed(2))
+      .join(",");
+    if (key === lastCloudKey.current && cloudGridRef.current) return;
+    lastCloudKey.current = key;
+
     const reqId = ++cloudReqId.current;
     try {
       const res = await fetch("/api/cloudgrid", {
@@ -93,7 +102,7 @@ export default function Map({ lat, lng, overlays }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bounds }),
       });
-      if (!res.ok) return;
+      if (!res.ok) { lastCloudKey.current = ""; return; }
       const grid: CloudGrid = await res.json();
       // Ignore stale responses (user moved again before this resolved).
       if (reqId !== cloudReqId.current || !cloudsOnRef.current) return;
