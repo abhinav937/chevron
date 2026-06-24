@@ -87,14 +87,50 @@ export async function getWeatherData(coords: Coordinates): Promise<WeatherData> 
  * reflects real regional structure (clear vs cloudy areas) for whatever the map
  * is currently showing. Grid rows run south → north (row 0 = southernmost),
  * columns west → east (col 0 = westernmost).
+ *
+ * Bounds are snapped outward to a coarse lattice so that nearby viewports
+ * collapse to the SAME query — combined with an in-memory TTL cache this keeps
+ * panning/zooming from hammering Open-Meteo's free tier (HTTP 429).
  */
+
+// Round a span/8-ish value to a "nice" lattice step (deg).
+function niceStep(raw: number): number {
+  const steps = [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20];
+  for (const s of steps) if (raw <= s) return s;
+  return 30;
+}
+
+interface CachedGrid {
+  grid: CloudGrid;
+  expires: number;
+}
+const gridCache = new Map<string, CachedGrid>();
+const GRID_TTL_MS = 15 * 60 * 1000; // 15 min — cloud cover doesn't move minute-to-minute
+
 export async function getCloudGrid(bounds: GeoBounds, steps = 10): Promise<CloudGrid> {
   // Clamp to valid / mercator-safe ranges.
-  const south = Math.max(-85, Math.min(bounds.south, bounds.north));
-  const north = Math.min(85, Math.max(bounds.south, bounds.north));
-  const west = Math.max(-180, bounds.west);
-  const east = Math.min(180, bounds.east);
+  let south = Math.max(-85, Math.min(bounds.south, bounds.north));
+  let north = Math.min(85, Math.max(bounds.south, bounds.north));
+  let west = Math.max(-180, bounds.west);
+  let east = Math.min(180, bounds.east);
+
+  // Snap outward to a lattice keyed to the current span, so a small pan reuses
+  // the same query (and cache entry) instead of issuing a fresh API call.
+  const snap = niceStep(Math.max(north - south, east - west) / 8);
+  south = Math.floor(south / snap) * snap;
+  west = Math.floor(west / snap) * snap;
+  north = Math.ceil(north / snap) * snap;
+  east = Math.ceil(east / snap) * snap;
+  south = Math.max(-85, Number(south.toFixed(4)));
+  north = Math.min(85, Number(north.toFixed(4)));
+  west = Math.max(-180, Number(west.toFixed(4)));
+  east = Math.min(180, Number(east.toFixed(4)));
   const safe: GeoBounds = { south, west, north, east };
+
+  const cacheKey = `${south},${west},${north},${east}@${steps}`;
+  const now = Date.now();
+  const cached = gridCache.get(cacheKey);
+  if (cached && cached.expires > now) return cached.grid;
 
   const latStep = steps > 1 ? (north - south) / (steps - 1) : 0;
   const lonStep = steps > 1 ? (east - west) / (steps - 1) : 0;
@@ -115,7 +151,11 @@ export async function getCloudGrid(bounds: GeoBounds, steps = 10): Promise<Cloud
   url.searchParams.set('timezone', 'UTC');
 
   const res = await fetch(url.toString(), { next: { revalidate: 1800 } });
-  if (!res.ok) throw new Error(`Open-Meteo grid error: ${res.status}`);
+  if (!res.ok) {
+    // On rate-limit/error, serve a stale cache entry if we have one.
+    if (cached) return cached.grid;
+    throw new Error(`Open-Meteo grid error: ${res.status}`);
+  }
 
   // Multi-location responses are an array in the same order as the input coords.
   const data = await res.json();
@@ -127,7 +167,14 @@ export async function getCloudGrid(bounds: GeoBounds, steps = 10): Promise<Cloud
     cloudCover: arr[i]?.current?.cloud_cover ?? 0,
   }));
 
-  return { bounds: safe, steps, points };
+  const grid: CloudGrid = { bounds: safe, steps, points };
+  gridCache.set(cacheKey, { grid, expires: now + GRID_TTL_MS });
+  // Bound cache size.
+  if (gridCache.size > 200) {
+    const oldest = gridCache.keys().next().value;
+    if (oldest) gridCache.delete(oldest);
+  }
+  return grid;
 }
 
 export function hasUpcomingPrecipitation(forecast: WeatherHour[], hours = 12): boolean {
