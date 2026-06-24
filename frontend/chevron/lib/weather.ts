@@ -21,6 +21,10 @@ async function fetchHourlyCloud(coords: Coordinates): Promise<{
   url.searchParams.set('latitude', coords.lat.toString());
   url.searchParams.set('longitude', coords.lon.toString());
   url.searchParams.set(
+    'current',
+    'cloud_cover,temperature_2m,precipitation,relative_humidity_2m,wind_speed_10m'
+  );
+  url.searchParams.set(
     'hourly',
     'cloud_cover,temperature_2m,precipitation,relative_humidity_2m,wind_speed_10m'
   );
@@ -32,21 +36,33 @@ async function fetchHourlyCloud(coords: Coordinates): Promise<{
 
   const data = await res.json();
   const hourly = data.hourly;
+  const current = data.current ?? {};
 
-  const forecast: WeatherHour[] = (hourly.time as string[]).slice(0, 72).map(
-    (time: string, i: number) => ({
-      time,
-      cloudCover: hourly.cloud_cover[i] ?? 0,
-      temperature: hourly.temperature_2m[i] ?? 0,
-      precipitation: hourly.precipitation[i] ?? 0,
-    })
+  // hourly.time[0] is today 00:00 UTC, so the array contains past hours. Start the
+  // forecast at the current hour so "upcoming" precipitation is genuinely ahead.
+  const times = hourly.time as string[];
+  const nowMs = Date.now();
+  let startIdx = times.findIndex(t => new Date(t + 'Z').getTime() >= nowMs);
+  if (startIdx < 0) startIdx = 0;
+
+  const forecast: WeatherHour[] = times.slice(startIdx, startIdx + 72).map(
+    (time: string, j: number) => {
+      const i = startIdx + j;
+      return {
+        time,
+        cloudCover: hourly.cloud_cover[i] ?? 0,
+        temperature: hourly.temperature_2m[i] ?? 0,
+        precipitation: hourly.precipitation[i] ?? 0,
+      };
+    }
   );
 
+  // Prefer the live `current` block; fall back to the current-hour slot.
   return {
-    cloudCover: hourly.cloud_cover[0] ?? 0,
-    temperature: hourly.temperature_2m[0] ?? 0,
-    humidity: hourly.relative_humidity_2m[0] ?? 0,
-    windSpeed: hourly.wind_speed_10m[0] ?? 0,
+    cloudCover: current.cloud_cover ?? hourly.cloud_cover[startIdx] ?? 0,
+    temperature: current.temperature_2m ?? hourly.temperature_2m[startIdx] ?? 0,
+    humidity: current.relative_humidity_2m ?? hourly.relative_humidity_2m[startIdx] ?? 0,
+    windSpeed: current.wind_speed_10m ?? hourly.wind_speed_10m[startIdx] ?? 0,
     forecast,
   };
 }
