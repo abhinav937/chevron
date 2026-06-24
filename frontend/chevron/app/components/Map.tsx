@@ -15,6 +15,10 @@ export interface MapOverlays {
   precipitation: boolean;
 }
 
+// Below this zoom the cloud grid under-samples the (huge) viewport, so the
+// overlay would be misleadingly coarse and inconsistent between zooms. Hide it.
+const MIN_CLOUD_ZOOM = 6;
+
 interface Props {
   lat: number;
   lng: number;
@@ -35,6 +39,7 @@ export default function Map({ lat, lng, overlays }: Props) {
   const cloudsOnRef = useRef(overlays.clouds);
   const lastCloudKey = useRef<string>("");
   const [mapReady, setMapReady] = useState(false);
+  const [cloudZoomedOut, setCloudZoomedOut] = useState(false);
 
   // Draw (or clear) the cloud overlay from whatever grid is currently cached.
   const drawCloudLayer = useCallback(() => {
@@ -49,6 +54,7 @@ export default function Map({ lat, lng, overlays }: Props) {
 
     const grid = cloudGridRef.current;
     if (!cloudsOnRef.current || !grid || grid.points.length === 0) return;
+    if (map.getZoom() < MIN_CLOUD_ZOOM) return;
 
     const dataUrl = cloudGridToDataUrl(grid);
     if (!dataUrl) return;
@@ -78,6 +84,17 @@ export default function Map({ lat, lng, overlays }: Props) {
       cloudFetchTimer.current = setTimeout(() => fetchCloudGridForViewport(), 250);
       return;
     }
+
+    // Too far out: the grid can't faithfully sample this area — hide rather than
+    // show misleading data that disagrees with the zoomed-in view.
+    if (map.getZoom() < MIN_CLOUD_ZOOM) {
+      setCloudZoomedOut(true);
+      cloudGridRef.current = null;
+      lastCloudKey.current = "";
+      drawCloudLayer();
+      return;
+    }
+    setCloudZoomedOut(false);
 
     const b = map.getBounds();
     const bounds = {
@@ -278,7 +295,17 @@ export default function Map({ lat, lng, overlays }: Props) {
         href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         crossOrigin=""
       />
-      <div ref={containerRef} style={{ height: "460px", width: "100%" }} />
+      <div style={{ position: "relative" }}>
+        <div ref={containerRef} style={{ height: "460px", width: "100%" }} />
+        {overlays.clouds && cloudZoomedOut && (
+          <div
+            style={{ zIndex: 500 }}
+            className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-[var(--border-strong)] bg-[var(--panel)]/90 px-3 py-1 text-[10px] uppercase tracking-wider text-[var(--text-dim)] pointer-events-none"
+          >
+            zoom in for cloud cover
+          </div>
+        )}
+      </div>
     </>
   );
 }

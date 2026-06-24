@@ -132,14 +132,28 @@ export async function getCloudGrid(bounds: GeoBounds, steps = 10): Promise<Cloud
   const cached = gridCache.get(cacheKey);
   if (cached && cached.expires > now) return cached.grid;
 
-  const latStep = steps > 1 ? (north - south) / (steps - 1) : 0;
+  // Longitude is linear in Web-Mercator, but latitude is NOT. The overlay image
+  // is stretched linearly onto the Mercator map, so sample rows evenly in
+  // Mercator-Y (not in degrees) — otherwise clouds drift north/south at low
+  // zoom and a fixed spot shows different data at different zooms.
+  const mercY = (lat: number) => {
+    const s = Math.sin((lat * Math.PI) / 180);
+    return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
+  };
+  const invMercY = (y: number) =>
+    (Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180) / Math.PI;
+
+  const yS = mercY(south);
+  const yN = mercY(north);
   const lonStep = steps > 1 ? (east - west) / (steps - 1) : 0;
   const lats: number[] = [];
   const lons: number[] = [];
 
   for (let row = 0; row < steps; row++) {
+    const t = steps > 1 ? row / (steps - 1) : 0; // row 0 = south
+    const lat = invMercY(yS + (yN - yS) * t);
     for (let col = 0; col < steps; col++) {
-      lats.push(Number((south + row * latStep).toFixed(4)));
+      lats.push(Number(lat.toFixed(4)));
       lons.push(Number((west + col * lonStep).toFixed(4)));
     }
   }
